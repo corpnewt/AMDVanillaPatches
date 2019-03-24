@@ -156,6 +156,7 @@ class AMDPatch:
         t_patch = target_data["KernelAndKextPatches"]["KernelToPatch"]
         s_patch = source_data["KernelAndKextPatches"]["KernelToPatch"]
         # At this point, we should be good to patch
+        changed = 0
         for x in s_patch:
             found = 0
             remove = []
@@ -165,31 +166,44 @@ class AMDPatch:
                     if not found:
                         found += 1
                         print(" --> Located in target.")
-                        if y.get("Disabled",False) != x.get("Disabled",False):
-                            print(" ----> Disabled status incorrect - setting to {}...".format(x.get("Disabled",False)))
-                            y["Disabled"] = x.get("Disabled",False)
+                        # Check Disabled, MatchOS, and MatchBuild
+                        for z in [("Disabled",False),("MatchOS",""),("MatchBuild","")]:
+                            if y.get(z[0],z[1]) != x.get(z[0],z[1]):
+                                changed += 1
+                                if not z[0] in x:
+                                    # Remove the value
+                                    print(" ----> {} ({}) not found in source - removing...".format(z[0],y.get(z[0],z[1])))
+                                    y.pop(z[0],None)
+                                else:
+                                    print(" ----> {} value incorrect - setting {} --> {}...".format(z[0],y.get(z[0],z[1]),x.get(z[0],z[1])))
+                                    y[z[0]] = x.get(z[0],z[1])
                     else:
                         print(" --> Duplicate found - removing")
+                        changed += 1 
                         remove.append(y)
             if len(remove):
                 for y in remove:
                     t_patch.remove(y)
             if not found:
+                changed += 1
                 print(" --> Not located in target, adding...")
                 t_patch.append(x)
         # Now we write our target plist data
-        print("Writing target plist...")
-        try:
-            with open(self.plist,"wb") as f:
-                plist.dump(target_data,f)
-        except Exception as e:
-            print("")
-            print("Unable to write target plist.  Aborting.")
-            print("")
-            print(str(e))
-            print("")
-            self.u.grab("Press [enter] to return...")
-            return
+        if changed == 0:
+            print("No changes made.")
+        else:
+            print("Writing target plist...")
+            try:
+                with open(self.plist,"wb") as f:
+                    plist.dump(target_data,f)
+            except Exception as e:
+                print("")
+                print("Unable to write target plist.  Aborting.")
+                print("")
+                print(str(e))
+                print("")
+                self.u.grab("Press [enter] to return...")
+                return
         print("")
         print("Done.")
         print("")
