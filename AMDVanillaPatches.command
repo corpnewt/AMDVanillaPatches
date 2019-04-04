@@ -6,7 +6,7 @@ class AMDPatch:
     def __init__(self):
         self.u = utils.Utils("AMDVanillaPatch")
         self.d = downloader.Downloader()
-        self.url = "https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/master/config.plist.zip"
+        self.url = "https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/master/patches.plist"
         self.scripts = "Scripts"
         self.plist = None
         self.plist_data = None
@@ -22,25 +22,20 @@ class AMDPatch:
             item = item[path]
         return dict_data
 
-    def _download_and_extract(self, temp, url):
+    def _download(self, temp, url):
         ztemp = tempfile.mkdtemp(dir=temp)
         zfile = os.path.basename(url)
         print("Downloading {}...".format(os.path.basename(url)))
         self.d.stream_to_file(url, os.path.join(ztemp,zfile), False)
-        print(" - Extracting...")
-        btemp = tempfile.mkdtemp(dir=temp)
-        # Extract with built-in tools \o/
-        with zipfile.ZipFile(os.path.join(ztemp,zfile)) as z:
-            z.extractall(os.path.join(temp,btemp))
         script_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts)
-        for x in os.listdir(os.path.join(temp,btemp)):
-            if "config.plist" in x.lower():
+        for x in os.listdir(os.path.join(temp,ztemp)):
+            if "patches.plist" in x.lower():
                 # Found one
                 print(" - Found {}".format(x))
                 print("   - Copying to {} directory...".format(self.scripts))
                 if not os.path.exists(script_dir):
                     os.mkdir(script_dir)
-                shutil.copy(os.path.join(btemp,x), os.path.join(script_dir,x))
+                shutil.copy(os.path.join(ztemp,x), os.path.join(script_dir,x))
 
     def _get_config(self):
         self.u.head("Getting Config.plist")
@@ -49,7 +44,7 @@ class AMDPatch:
         temp = tempfile.mkdtemp()
         cwd = os.getcwd()
         try:
-            self._download_and_extract(temp,self.url)
+            self._download(temp,self.url)
         except Exception as e:
             print("We ran into some problems :(\n\n{}".format(e))
         print("Cleaning up...")
@@ -100,7 +95,7 @@ class AMDPatch:
 
     def _patch_config(self):
         # Verify we have a source plist
-        source = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts,"config.plist")
+        source = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts,"patches.plist")
         if not os.path.exists(source):
             self._get_config()
         if not os.path.exists(source):
@@ -212,7 +207,7 @@ class AMDPatch:
     def main(self):
         self.u.head()
         print("")
-        source = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts,"config.plist")
+        source = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts,"patches.plist")
         print("Source plist: {}".format("Exists" if os.path.exists(source) else "Will be downloaded!"))
         print("Target plist: {}".format(self.plist))
         print("")
