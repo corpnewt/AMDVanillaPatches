@@ -1,15 +1,19 @@
 #!/usr/bin/env python
-import os, sys, tempfile, shutil, zipfile
+import os, sys, tempfile, shutil
 from Scripts import *
 
 class AMDPatch:
     def __init__(self):
         self.u = utils.Utils("AMDVanillaPatch")
         self.d = downloader.Downloader()
-        self.url = "https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/master/patches.plist"
+        self.urls = {
+            "Zen": "https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/master/Zen/patches.plist",
+            "FX" : "https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/master/15h:16h%20FX/patches.plist"
+        }
         self.scripts = "Scripts"
         self.plist = None
         self.plist_data = None
+        self.cpu_type = list(self.urls)[0]
 
     def _ensure(self, path_list, dict_data, obj_type = list):
         item = dict_data
@@ -35,16 +39,16 @@ class AMDPatch:
                 print("   - Copying to {} directory...".format(self.scripts))
                 if not os.path.exists(script_dir):
                     os.mkdir(script_dir)
-                shutil.copy(os.path.join(ztemp,x), os.path.join(script_dir,x))
+                shutil.copy(os.path.join(ztemp,x), os.path.join(script_dir,"{}-{}".format(self.cpu_type,x)))
 
-    def _get_config(self):
-        self.u.head("Getting Config.plist")
+    def _get_config(self, key = None):
+        self.u.head("Getting Patches.plist")
         print("")
-        # Download the zip
+        # Download the plist
         temp = tempfile.mkdtemp()
         cwd = os.getcwd()
         try:
-            self._download(temp,self.url)
+            self._download(temp,self.urls[key])
         except Exception as e:
             print("We ran into some problems :(\n\n{}".format(e))
         print("Cleaning up...")
@@ -95,7 +99,7 @@ class AMDPatch:
 
     def _patch_config(self):
         # Verify we have a source plist
-        source = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts,"patches.plist")
+        source = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts,"{}-patches.plist".format(self.cpu_type))
         if not os.path.exists(source):
             self._get_config()
         if not os.path.exists(source):
@@ -204,16 +208,47 @@ class AMDPatch:
         print("")
         self.u.grab("Press [enter] to return...")
 
+    def pick_cpu_type(self):
+        self.u.head()
+        print("")
+        print("Current CPU Type: {}".format(self.cpu_type))
+        print("")
+        for index,value in enumerate(list(self.urls)):
+            print("{}. {}".format(index+1, value))
+        print("")
+        print("M. Main Menu")
+        print("Q. Quit")
+        print("")
+        menu = self.u.grab("Please select an option:  ").lower()
+        if not len(menu):
+            self.pick_cpu_type
+        if menu == "q":
+            self.u.custom_quit()
+        elif menu == "m":
+            return
+        # Get the menu as an int
+        try:
+            menu = int(menu)-1
+        except:
+            return
+        if menu < 0 or menu >= len(self.urls):
+            # OOB
+            return
+        # Have an index that's in bounds - save our cpu_type
+        self.cpu_type = list(self.urls)[menu]
+
     def main(self):
         self.u.head()
         print("")
-        source = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts,"patches.plist")
+        source = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts,"{}-patches.plist".format(self.cpu_type))
+        print("CPU Type:     {}".format(self.cpu_type))
         print("Source plist: {}".format("Exists" if os.path.exists(source) else "Will be downloaded!"))
         print("Target plist: {}".format(self.plist))
         print("")
-        print("1. Install/Update vanilla patches")
-        print("2. Select target config.plist")
-        print("3. Patch target config.plist")
+        print("1. Select CPU Type")
+        print("2. Install/Update vanilla patches")
+        print("3. Select target config.plist")
+        print("4. Patch target config.plist")
         print("")
         print("Q. Quit")
         print("")
@@ -223,10 +258,12 @@ class AMDPatch:
         if menu == "q":
             self.u.custom_quit()
         elif menu == "1":
-            self._get_config()
+            self.pick_cpu_type()
         elif menu == "2":
-            self._get_plist()
+            self._get_config(self.cpu_type)
         elif menu == "3":
+            self._get_plist()
+        elif menu == "4":
             self._patch_config()
 
 a = AMDPatch()
