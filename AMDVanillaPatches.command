@@ -7,8 +7,8 @@ class AMDPatch:
         self.u = utils.Utils("AMDVanillaPatch")
         self.d = downloader.Downloader()
         self.urls = {
-            "Zen": "https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/master/17h/patches.plist",
-            "FX" : "https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/master/15h_16h/patches.plist"
+            "Zen": "https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/opencore/17h_19h/patches.plist",
+            "FX" : "https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/opencore/15h_16h/patches.plist"
         }
         self.scripts = "Scripts"
         self.plist = None
