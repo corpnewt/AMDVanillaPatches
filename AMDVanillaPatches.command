@@ -101,7 +101,7 @@ class AMDPatch:
         # Verify we have a source plist
         source = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts,"{}-patches.plist".format(self.cpu_type))
         if not os.path.exists(source):
-            self._get_config()
+            self._get_config(self.cpu_type)
         if not os.path.exists(source):
             # Still couldn't get it
             self.u.head("Error")
@@ -148,25 +148,33 @@ class AMDPatch:
             print("")
             self.u.grab("Press [enter] to return...")
             return
-        print("Iterating patches...")
         # Ensure the target path exists
-        target_data = self._ensure(["KernelAndKextPatches","KernelToPatch"],target_data,list)
-        source_data = self._ensure(["KernelAndKextPatches","KernelToPatch"],source_data,list)
-        t_patch = target_data["KernelAndKextPatches"]["KernelToPatch"]
-        s_patch = source_data["KernelAndKextPatches"]["KernelToPatch"]
+        if "KernelAndKextPatches" in source_data: # Clover
+            print("Detected Clover patch plist...")
+            target_data = self._ensure(["KernelAndKextPatches","KernelToPatch"],target_data,list)
+            source_data = self._ensure(["KernelAndKextPatches","KernelToPatch"],source_data,list)
+            t_patch = target_data["KernelAndKextPatches"]["KernelToPatch"]
+            s_patch = source_data["KernelAndKextPatches"]["KernelToPatch"]
+        else: # Assume OpenCore
+            print("Detected OpenCore patch plist...")
+            target_data = self._ensure(["Kernel","Patch"],target_data,list)
+            source_data = self._ensure(["Kernel","Patch"],source_data,list)
+            t_patch = target_data["Kernel"]["Patch"]
+            s_patch = source_data["Kernel"]["Patch"]
+        print("Iterating {:,} patch{}...".format(len(s_patch),"" if len(s_patch)==1 else "es"))
         # At this point, we should be good to patch
         changed = 0
-        for x in s_patch:
+        for i,x in enumerate(s_patch, start=1):
             found = 0
             remove = []
-            print(" - {}".format(x.get("Comment","Uncommented")))
+            print(" - {}. {}".format(str(i).rjust(3),x.get("Comment","Uncommented")))
             for y in t_patch:
                 if y["Find"] == x["Find"] and y["Replace"] == x["Replace"]:
                     if not found:
                         found += 1
                         print(" --> Located in target.")
                         # Check Disabled, MatchOS, and MatchBuild
-                        for z in [("Disabled",False),("MatchOS",""),("MatchBuild","")]:
+                        for z in [("Enabled",True),("MinKernel",""),("MaxKernel",""),("MatchKernel",""),("Disabled",False),("MatchOS",""),("MatchBuild","")]:
                             if y.get(z[0],z[1]) != x.get(z[0],z[1]):
                                 changed += 1
                                 if not z[0] in x:
