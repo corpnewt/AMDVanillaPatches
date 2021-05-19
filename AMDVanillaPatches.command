@@ -169,7 +169,7 @@ class AMDPatch:
             remove = []
             print(" - {}. {}".format(str(i).rjust(3),x.get("Comment","Uncommented")))
             for y in t_patch:
-                if y["Find"] == x["Find"] and y["Replace"] == x["Replace"]:
+                if all((x.get(z,"") == y.get(z,"") for z in ("Find","Replace","Base"))):
                     if not found:
                         found += 1
                         print(" --> Located in target.")
