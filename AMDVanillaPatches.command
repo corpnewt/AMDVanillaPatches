@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import os, sys, tempfile, shutil
+import os, sys, tempfile, shutil, binascii, plistlib
 from Scripts import *
 
 class AMDPatch:
@@ -7,13 +7,13 @@ class AMDPatch:
         self.u = utils.Utils("AMDVanillaPatch")
         self.d = downloader.Downloader()
         self.urls = {
-            "Zen": "https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/opencore/17h_19h/patches.plist",
-            "FX" : "https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/opencore/15h_16h/patches.plist"
+            "OC":"https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/master/patches.plist",
+            "Clover":"https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/clover/patches.plist"
         }
+        self.cpu_core_prefix = "algrey - Force cpuid_cores_per_package"
         self.scripts = "Scripts"
         self.plist = None
         self.plist_data = None
-        self.cpu_type = list(self.urls)[0]
 
     def _ensure(self, path_list, dict_data, obj_type = list):
         item = dict_data
@@ -26,10 +26,10 @@ class AMDPatch:
             item = item[path]
         return dict_data
 
-    def _download(self, temp, url):
+    def _download(self, temp, url, prefix = "OC"):
         ztemp = tempfile.mkdtemp(dir=temp)
         zfile = os.path.basename(url)
-        print("Downloading {}...".format(os.path.basename(url)))
+        print("Downloading {}-{}...".format(prefix,os.path.basename(url)))
         self.d.stream_to_file(url, os.path.join(ztemp,zfile), False)
         script_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts)
         for x in os.listdir(os.path.join(temp,ztemp)):
@@ -39,22 +39,23 @@ class AMDPatch:
                 print("   - Copying to {} directory...".format(self.scripts))
                 if not os.path.exists(script_dir):
                     os.mkdir(script_dir)
-                shutil.copy(os.path.join(ztemp,x), os.path.join(script_dir,"{}-{}".format(self.cpu_type,x)))
+                shutil.copy(os.path.join(ztemp,x), os.path.join(script_dir,"{}-{}".format(prefix,x)))
 
-    def _get_config(self, key = None):
+    def _get_config(self,pause=True):
         self.u.head("Getting Patches.plist")
         print("")
         # Download the plist
         temp = tempfile.mkdtemp()
         cwd = os.getcwd()
-        try:
-            self._download(temp,self.urls[key])
-        except Exception as e:
-            print("We ran into some problems :(\n\n{}".format(e))
+        for key in self.urls:
+            try:
+                self._download(temp,self.urls[key],prefix=key)
+            except Exception as e:
+                print("We ran into some problems :(\n\n{}".format(e))
         print("Cleaning up...")
         os.chdir(cwd)
         shutil.rmtree(temp)
-        self.u.grab("Done.",timeout=5)
+        if pause: self.u.grab("Done.",timeout=5)
         return
 
     def _get_plist(self):
@@ -97,19 +98,27 @@ class AMDPatch:
         # Got a valid plist - let's check keys
         self.plist = pc
 
+    def _get_cpu_cores(self):
+        # Let's get the number of CPU cores for the replace values
+        while True:
+            self.u.head("CPU Cores")
+            print("")
+            print("Core Count patch needs to be modified to boot your system.")
+            print("")
+            print("M. Return to Menu")
+            print("Q. Quit")
+            print("")
+            cores = self.u.grab("Please enter the number of CPU cores:  ")
+            if not len(cores): continue
+            if cores.lower() == "m": return
+            if cores.lower() == "q": self.u.custom_quit()
+            try:
+                cores = int(cores)
+                assert 0 < cores < 256
+            except: continue
+            return cores                
+
     def _patch_config(self):
-        # Verify we have a source plist
-        source = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts,"{}-patches.plist".format(self.cpu_type))
-        if not os.path.exists(source):
-            self._get_config(self.cpu_type)
-        if not os.path.exists(source):
-            # Still couldn't get it
-            self.u.head("Error")
-            print("")
-            print("Unable to locate source plist.  Aborting.")
-            print("")
-            self.u.grab("Press [enter] to return...")
-            return
         # Verify we have a target plist
         if not self.plist or not os.path.exists(self.plist):
             self._get_plist()
@@ -121,21 +130,11 @@ class AMDPatch:
             print("")
             self.u.grab("Press [enter] to return...")
             return
+        cpu_cores = self._get_cpu_cores()
+        if not cpu_cores: return
         # Load them both and merge
         self.u.head("Patching")
         print("")
-        print("Loading source plist...")
-        try:
-            with open(source,"rb") as f:
-                source_data = plist.load(f)
-        except Exception as e:
-            print("")
-            print("Unable to load source plist.  Aborting.")
-            print("")
-            print(str(e))
-            print("")
-            self.u.grab("Press [enter] to return...")
-            return
         print("Loading target plist...")
         try:
             with open(self.plist,"rb") as f:
@@ -148,19 +147,46 @@ class AMDPatch:
             print("")
             self.u.grab("Press [enter] to return...")
             return
+        # Check our plist type - prioritize OC, look for "Kernel" first, then look for "KernelAndKextPatches", then fall back to OC
+        plist_type = "OC" if "Kernel" in target_data else "Clover" if "KernelAndKextPatches" in target_data else "OC"
+        # Verify we have a source plist
+        source = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts,"{}-patches.plist".format(plist_type))
+        if not os.path.exists(source): self._get_config(pause=False)
+        if not os.path.exists(source):
+            # Still couldn't get it
+            self.u.head("Error")
+            print("")
+            print("Unable to locate source plist.  Aborting.")
+            print("")
+            self.u.grab("Press [enter] to return...")
+            return
+        print("Loading source plist...")
+        try:
+            with open(source,"rb") as f:
+                source_data = plist.load(f)
+        except Exception as e:
+            print("")
+            print("Unable to load source plist.  Aborting.")
+            print("")
+            print(str(e))
+            print("")
+            self.u.grab("Press [enter] to return...")
+            return
         # Ensure the target path exists
-        if "KernelAndKextPatches" in source_data: # Clover
-            print("Detected Clover patch plist...")
+        if plist_type == "Clover": # Clover
+            print("Detected Clover plist...")
             target_data = self._ensure(["KernelAndKextPatches","KernelToPatch"],target_data,list)
             source_data = self._ensure(["KernelAndKextPatches","KernelToPatch"],source_data,list)
             t_patch = target_data["KernelAndKextPatches"]["KernelToPatch"]
             s_patch = source_data["KernelAndKextPatches"]["KernelToPatch"]
+            plist_type = "Clover"
         else: # Assume OpenCore
-            print("Detected OpenCore patch plist...")
+            print("Detected OpenCore plist...")
             target_data = self._ensure(["Kernel","Patch"],target_data,list)
             source_data = self._ensure(["Kernel","Patch"],source_data,list)
             t_patch = target_data["Kernel"]["Patch"]
             s_patch = source_data["Kernel"]["Patch"]
+            plist_type = "OC"
         print("Iterating {:,} patch{}...".format(len(s_patch),"" if len(s_patch)==1 else "es"))
         # At this point, we should be good to patch
         changed = 0
@@ -168,13 +194,21 @@ class AMDPatch:
             found = 0
             remove = []
             print(" - {}. {}".format(str(i).rjust(3),x.get("Comment","Uncommented")))
+            if x.get("Comment","").startswith(self.cpu_core_prefix) and "Replace" in x:
+                print(" --> Needs core count patch - setting to {} core{}...".format(cpu_cores,"" if cpu_cores==1 else "s"))
+                repl = binascii.hexlify(plist.extract_data(x["Replace"])).decode("utf-8")
+                after = repl[:2]+hex(cpu_cores)[2:].rjust(2,"0")+repl[4:]
+                x["Replace"] = plist.wrap_data(binascii.unhexlify(after.encode("utf-8")))
+                find_check = ("Find","Base","MinKernel","MaxKernel","MatchOS") # Force checking of extra keys in lieu of just Find/Replace
+            else:
+                find_check = ("Find","Replace","Base")
             for y in t_patch:
-                if all((x.get(z,"") == y.get(z,"") for z in ("Find","Replace","Base"))):
+                if all((x.get(z,"") == y.get(z,"") for z in find_check)):
                     if not found:
                         found += 1
                         print(" --> Located in target.")
                         # Check Disabled, MatchOS, and MatchBuild
-                        for z in [("Enabled",True),("MinKernel",""),("MaxKernel",""),("MatchKernel",""),("Disabled",False),("MatchOS",""),("MatchBuild","")]:
+                        for z in [("Enabled",True),("MinKernel",""),("MaxKernel",""),("MatchKernel",""),("Disabled",False),("MatchOS",""),("MatchBuild","")] + [] if "Replace" in find_check else [("Replace",x["Replace"])]:
                             if y.get(z[0],z[1]) != x.get(z[0],z[1]):
                                 changed += 1
                                 if not z[0] in x:
@@ -182,7 +216,10 @@ class AMDPatch:
                                     print(" ----> {} ({}) not found in source - removing...".format(z[0],y.get(z[0],z[1])))
                                     y.pop(z[0],None)
                                 else:
-                                    print(" ----> {} value incorrect - setting {} --> {}...".format(z[0],y.get(z[0],z[1]),x.get(z[0],z[1])))
+                                    instances = (bytes) if sys.version_info >= (3,0) else (plistlib.Data)
+                                    val1 = binascii.hexlify(plist.extract_data(y.get(z[0],z[1]))).decode("utf-8").upper() if isinstance(y.get(z[0],z[1]),instances) else y.get(z[0],z[1])
+                                    val2 = binascii.hexlify(plist.extract_data(x.get(z[0],z[1]))).decode("utf-8").upper() if isinstance(y.get(z[0],z[1]),instances) else y.get(z[0],z[1])
+                                    print(" ----> {} value incorrect - setting {} --> {}...".format(z[0],val1,val2))
                                     y[z[0]] = x.get(z[0],z[1])
                     else:
                         print(" --> Duplicate found - removing")
@@ -216,47 +253,17 @@ class AMDPatch:
         print("")
         self.u.grab("Press [enter] to return...")
 
-    def pick_cpu_type(self):
-        self.u.head()
-        print("")
-        print("Current CPU Type: {}".format(self.cpu_type))
-        print("")
-        for index,value in enumerate(list(self.urls)):
-            print("{}. {}".format(index+1, value))
-        print("")
-        print("M. Main Menu")
-        print("Q. Quit")
-        print("")
-        menu = self.u.grab("Please select an option:  ").lower()
-        if not len(menu):
-            self.pick_cpu_type
-        if menu == "q":
-            self.u.custom_quit()
-        elif menu == "m":
-            return
-        # Get the menu as an int
-        try:
-            menu = int(menu)-1
-        except:
-            return
-        if menu < 0 or menu >= len(self.urls):
-            # OOB
-            return
-        # Have an index that's in bounds - save our cpu_type
-        self.cpu_type = list(self.urls)[menu]
-
     def main(self):
         self.u.head()
         print("")
-        source = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts,"{}-patches.plist".format(self.cpu_type))
-        print("CPU Type:     {}".format(self.cpu_type))
-        print("Source plist: {}".format("Exists" if os.path.exists(source) else "Will be downloaded!"))
+        for key in self.urls:
+            source = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts,"{}-patches.plist".format(key))
+            print("{}: {}".format(os.path.basename(source),"Exists" if os.path.exists(source) else "Will be downloaded!"))
         print("Target plist: {}".format(self.plist))
         print("")
-        print("1. Select CPU Type")
-        print("2. Install/Update vanilla patches")
-        print("3. Select target config.plist")
-        print("4. Patch target config.plist")
+        print("1. Install/Update vanilla patches")
+        print("2. Select target config.plist")
+        print("3. Patch target config.plist")
         print("")
         print("Q. Quit")
         print("")
@@ -266,12 +273,10 @@ class AMDPatch:
         if menu == "q":
             self.u.custom_quit()
         elif menu == "1":
-            self.pick_cpu_type()
+            self._get_config()
         elif menu == "2":
-            self._get_config(self.cpu_type)
-        elif menu == "3":
             self._get_plist()
-        elif menu == "4":
+        elif menu == "3":
             self._patch_config()
 
 a = AMDPatch()
