@@ -176,9 +176,9 @@ class AMDPatch:
         if plist_type == "Clover": # Clover
             print("Detected Clover plist...")
             target_data = self._ensure(["KernelAndKextPatches","KernelToPatch"],target_data,list)
-            source_data = self._ensure(["KernelAndKextPatches","KernelToPatch"],source_data,list)
+            source_data = self._ensure(["KernelToPatch"],source_data,list)
             t_patch = target_data["KernelAndKextPatches"]["KernelToPatch"]
-            s_patch = source_data["KernelAndKextPatches"]["KernelToPatch"]
+            s_patch = source_data["KernelToPatch"]
             plist_type = "Clover"
         else: # Assume OpenCore
             print("Detected OpenCore plist...")
