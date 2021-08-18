@@ -14,6 +14,7 @@ class AMDPatch:
         self.scripts = "Scripts"
         self.plist = None
         self.plist_data = None
+        self.remove_existing = False
 
     def _ensure(self, path_list, dict_data, obj_type = list):
         item = dict_data
@@ -173,10 +174,13 @@ class AMDPatch:
             self.u.grab("Press [enter] to return...")
             return
         # Ensure the target path exists
+        if self.remove_existing:
+            print("Removing ALL existing patches in target plist...")
         if plist_type == "Clover": # Clover
             print("Detected Clover plist...")
             target_data = self._ensure(["KernelAndKextPatches","KernelToPatch"],target_data,list)
             source_data = self._ensure(["KernelToPatch"],source_data,list)
+            if self.remove_existing: target_data["KernelAndKextPatches"]["KernelToPatch"] = []
             t_patch = target_data["KernelAndKextPatches"]["KernelToPatch"]
             s_patch = source_data["KernelToPatch"]
             plist_type = "Clover"
@@ -184,6 +188,7 @@ class AMDPatch:
             print("Detected OpenCore plist...")
             target_data = self._ensure(["Kernel","Patch"],target_data,list)
             source_data = self._ensure(["Kernel","Patch"],source_data,list)
+            if self.remove_existing: target_data["Kernel"]["Patch"] = []
             t_patch = target_data["Kernel"]["Patch"]
             s_patch = source_data["Kernel"]["Patch"]
             plist_type = "OC"
@@ -264,6 +269,7 @@ class AMDPatch:
         print("1. Install/Update vanilla patches")
         print("2. Select target config.plist")
         print("3. Patch target config.plist")
+        print("4. Remove ALL existing patches in target (Currently {})".format("Enabled" if self.remove_existing else "Disabled"))
         print("")
         print("Q. Quit")
         print("")
@@ -278,6 +284,8 @@ class AMDPatch:
             self._get_plist()
         elif menu == "3":
             self._patch_config()
+        elif menu == "4":
+            self.remove_existing = not self.remove_existing
 
 a = AMDPatch()
 while True:
