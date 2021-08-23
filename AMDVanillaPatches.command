@@ -175,7 +175,7 @@ class AMDPatch:
             return
         # Ensure the target path exists
         if self.remove_existing:
-            print("Removing ALL existing patches in target plist...")
+            print("Removing ALL existing kernel patches in target plist...")
         if plist_type == "Clover": # Clover
             print("Detected Clover plist...")
             target_data = self._ensure(["KernelAndKextPatches","KernelToPatch"],target_data,list)
@@ -189,7 +189,7 @@ class AMDPatch:
             target_data = self._ensure(["Kernel","Patch"],target_data,list)
             target_data = self._ensure(["Kernel","Quirks"],target_data,dict)
             source_data = self._ensure(["Kernel","Patch"],source_data,list)
-            if self.remove_existing: target_data["Kernel"]["Patch"] = []
+            if self.remove_existing: target_data["Kernel"]["Patch"] = [x for x in target_data["Kernel"]["Patch"] if x.get("Identifier","") != "kernel"]
             t_patch = target_data["Kernel"]["Patch"]
             s_patch = source_data["Kernel"]["Patch"]
             plist_type = "OC"
@@ -275,7 +275,7 @@ class AMDPatch:
         print("1. Install/Update vanilla patches")
         print("2. Select target config.plist")
         print("3. Patch target config.plist")
-        print("4. Remove ALL existing patches in target (Currently {})".format("Enabled" if self.remove_existing else "Disabled"))
+        print("4. Remove ALL existing kernel patches in target (Currently {})".format("Enabled" if self.remove_existing else "Disabled"))
         print("")
         print("Q. Quit")
         print("")
