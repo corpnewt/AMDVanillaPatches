@@ -187,11 +187,17 @@ class AMDPatch:
         else: # Assume OpenCore
             print("Detected OpenCore plist...")
             target_data = self._ensure(["Kernel","Patch"],target_data,list)
+            target_data = self._ensure(["Kernel","Quirks"],target_data,dict)
             source_data = self._ensure(["Kernel","Patch"],source_data,list)
             if self.remove_existing: target_data["Kernel"]["Patch"] = []
             t_patch = target_data["Kernel"]["Patch"]
             s_patch = source_data["Kernel"]["Patch"]
             plist_type = "OC"
+            if not target_data["Kernel"]["Quirks"].get("ProvideCurrentCpuInfo",False):
+                target_data["Kernel"]["Quirks"]["ProvideCurrentCpuInfo"] = True
+                if not "ProvideCurrentCpuInfo" in target_data["Kernel"]["Quirks"]:
+                    print("Adding missing ProvideCurrentCpuInfo...\n** Make sure OpenCore is updated to at least 0.7.1!! **")
+                print("ProvideCurrentCpuInfo disabled - enabling...")
         print("Iterating {:,} patch{}...".format(len(s_patch),"" if len(s_patch)==1 else "es"))
         # At this point, we should be good to patch
         changed = 0
