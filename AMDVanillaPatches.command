@@ -196,10 +196,11 @@ class AMDPatch:
             plist_type = "OC"
             if not target_data["Kernel"]["Quirks"].get("ProvideCurrentCpuInfo",False):
                 changed += 1
-                target_data["Kernel"]["Quirks"]["ProvideCurrentCpuInfo"] = True
                 if not "ProvideCurrentCpuInfo" in target_data["Kernel"]["Quirks"]:
                     print("Adding missing ProvideCurrentCpuInfo...\n** Make sure OpenCore is updated to at least 0.7.1!! **")
-                print("ProvideCurrentCpuInfo disabled - enabling...")
+                else:
+                    print("ProvideCurrentCpuInfo disabled - enabling...")
+                target_data["Kernel"]["Quirks"]["ProvideCurrentCpuInfo"] = True
         print("Iterating {:,} patch{}...".format(len(s_patch),"" if len(s_patch)==1 else "es"))
         # At this point, we should be good to patch
         for i,x in enumerate(s_patch, start=1):
