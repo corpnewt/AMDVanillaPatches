@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import os, sys, tempfile, shutil, binascii, plistlib
+import os, sys, tempfile, shutil, binascii, plistlib, subprocess, platform
 from Scripts import *
 
 class AMDPatch:
@@ -15,6 +15,7 @@ class AMDPatch:
         self.plist = None
         self.plist_data = None
         self.remove_existing = False
+        self.local_cores = self._detect_cores()
 
     def _ensure(self, path_list, dict_data, obj_type = list):
         item = dict_data
@@ -99,6 +100,22 @@ class AMDPatch:
         # Got a valid plist - let's check keys
         self.plist = pc
 
+    def _detect_cores(self):
+        try:
+            _platform = platform.system().lower()
+            if _platform == "darwin":
+                return int(subprocess.check_output(["sysctl", "-a", "machdep.cpu.core_count"]).decode().split(":")[1].strip())
+            elif _platform == "windows":
+                return int(subprocess.check_output(["wmic", "cpu", "get", "NumberOfCores"]).decode().split("\n")[1].strip())
+            elif _platform == "linux":
+                data = subprocess.check_output(["cat", "/proc/cpuinfo"]).decode().split("\n")
+                for line in data:
+                    if line.startswith("cpu cores"):
+                        return int(line.split(":")[1].strip())
+        except:
+            pass
+        return -1
+
     def _get_cpu_cores(self):
         # Let's get the number of CPU cores for the replace values
         while True:
@@ -106,6 +123,8 @@ class AMDPatch:
             print("")
             print("Core Count patch needs to be modified to boot your system.")
             print("")
+            if self.local_cores != -1:
+                print("L. Use Local Machine's Value ({:,} core{})".format(self.local_cores,"" if self.local_cores==1 else "s"))
             print("M. Return to Menu")
             print("Q. Quit")
             print("")
@@ -113,6 +132,7 @@ class AMDPatch:
             if not len(cores): continue
             if cores.lower() == "m": return
             if cores.lower() == "q": self.u.custom_quit()
+            if self.local_cores != -1 and cores.lower() == "l": return self.local_cores
             try:
                 cores = int(cores)
                 assert 0 < cores < 256
