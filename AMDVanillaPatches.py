@@ -240,8 +240,13 @@ class AMDPatch:
                     if not found:
                         found += 1
                         print(" --> Located in target.")
+                        check_pairs = [("MinKernel",""),("MaxKernel",""),("MatchKernel",""),("Disabled",False),("MatchOS",""),("MatchBuild","")]
+                        if not "Replace" in find_check: # We're looking for a CPU core check
+                            check_pairs.append(("Replace",x["Replace"]))
+                        if not "_mtrr_update_action fix pat" in x.get("Comment","").lower(): # We're comparing a non-PAT fix
+                            check_pairs.append(("Enabled",True))
                         # Check Disabled, MatchOS, and MatchBuild
-                        for z in [("Enabled",True),("MinKernel",""),("MaxKernel",""),("MatchKernel",""),("Disabled",False),("MatchOS",""),("MatchBuild","")] + [] if "Replace" in find_check else [("Replace",x["Replace"])]:
+                        for z in check_pairs:
                             if y.get(z[0],z[1]) != x.get(z[0],z[1]):
                                 changed += 1
                                 if not z[0] in x:
@@ -251,7 +256,7 @@ class AMDPatch:
                                 else:
                                     instances = (bytes) if sys.version_info >= (3,0) else (plistlib.Data)
                                     val1 = binascii.hexlify(plist.extract_data(y.get(z[0],z[1]))).decode("utf-8").upper() if isinstance(y.get(z[0],z[1]),instances) else y.get(z[0],z[1])
-                                    val2 = binascii.hexlify(plist.extract_data(x.get(z[0],z[1]))).decode("utf-8").upper() if isinstance(y.get(z[0],z[1]),instances) else y.get(z[0],z[1])
+                                    val2 = binascii.hexlify(plist.extract_data(x.get(z[0],z[1]))).decode("utf-8").upper() if isinstance(x.get(z[0],z[1]),instances) else x.get(z[0],z[1])
                                     print(" ----> {} value incorrect - setting {} --> {}...".format(z[0],val1,val2))
                                     y[z[0]] = x.get(z[0],z[1])
                     else:
