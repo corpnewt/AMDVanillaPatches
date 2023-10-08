@@ -10,7 +10,6 @@ class AMDPatch:
             "OC":"https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/master/patches.plist",
             "Clover":"https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/clover/patches.plist"
         }
-        self.cpu_core_prefix = "algrey - Force cpuid_cores_per_package"
         self.scripts = "Scripts"
         self.plist = None
         self.plist_data = None
@@ -227,7 +226,7 @@ class AMDPatch:
             found = 0
             remove = []
             print(" - {}. {}".format(str(i).rjust(3),x.get("Comment","Uncommented")))
-            if x.get("Comment","").startswith(self.cpu_core_prefix) and "Replace" in x:
+            if "force cpuid_cores_per_package" in x.get("Comment","").lower() and "Replace" in x:
                 print(" --> Needs core count patch - setting to {} core{}...".format(cpu_cores,"" if cpu_cores==1 else "s"))
                 repl = binascii.hexlify(plist.extract_data(x["Replace"])).decode("utf-8")
                 after = repl[:2]+hex(cpu_cores)[2:].rjust(2,"0")+repl[4:]
@@ -243,7 +242,7 @@ class AMDPatch:
                         check_pairs = [("MinKernel",""),("MaxKernel",""),("MatchKernel",""),("Disabled",False),("MatchOS",""),("MatchBuild","")]
                         if not "Replace" in find_check: # We're looking for a CPU core check
                             check_pairs.append(("Replace",x["Replace"]))
-                        if not "_mtrr_update_action fix pat" in x.get("Comment","").lower(): # We're comparing a non-PAT fix
+                        if not "fix pat" in x.get("Comment","").lower(): # We're comparing a non-PAT fix
                             check_pairs.append(("Enabled",True))
                         # Check Disabled, MatchOS, and MatchBuild
                         for z in check_pairs:
