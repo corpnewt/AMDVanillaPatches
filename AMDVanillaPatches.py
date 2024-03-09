@@ -14,6 +14,21 @@ class AMDPatch:
         self.plist = None
         self.plist_data = None
         self.remove_existing = False
+        # Additional non-kernel patches to remove if removing existing
+        self.additional_patches = [
+            {
+                "Find":plist.wrap_data(binascii.unhexlify("E0117200".encode("utf-8"))),
+                "Identifier":"com.apple.iokit.IOPCIFamily",
+                "Name":"com.apple.iokit.IOPCIFamily",
+                "Replace":plist.wrap_data(binascii.unhexlify("00000300".encode("utf-8")))
+            },
+            {
+                "Find":plist.wrap_data(binascii.unhexlify("8400754B".encode("utf-8"))),
+                "Identifier":"com.apple.iokit.IOPCIFamily",
+                "Name":"com.apple.iokit.IOPCIFamily",
+                "Replace":plist.wrap_data(binascii.unhexlify("0000EB00".encode("utf-8")))
+            }
+        ]
         self.local_cores = self._detect_cores()
 
     def _ensure(self, path_list, dict_data, obj_type = list):
@@ -136,7 +151,59 @@ class AMDPatch:
                 cores = int(cores)
                 assert 0 < cores < 256
             except: continue
-            return cores                
+            return cores
+    
+    def _walk_patches(self,s_patch,t_patch,cpu_cores):
+        changed = 0
+        print("Iterating {:,} patch{}...".format(len(s_patch),"" if len(s_patch)==1 else "es"))
+        for i,x in enumerate(s_patch, start=1):
+            found = 0
+            remove = []
+            print(" - {}. {}".format(str(i).rjust(3),x.get("Comment","Uncommented")))
+            if "force cpuid_cores_per_package" in x.get("Comment","").lower() and "Replace" in x:
+                print(" --> Needs core count patch - setting to {} core{}...".format(cpu_cores,"" if cpu_cores==1 else "s"))
+                repl = binascii.hexlify(plist.extract_data(x["Replace"])).decode("utf-8")
+                after = repl[:2]+hex(cpu_cores)[2:].rjust(2,"0")+repl[4:]
+                x["Replace"] = plist.wrap_data(binascii.unhexlify(after.encode("utf-8")))
+                find_check = ("Find","Base","MinKernel","MaxKernel","MatchOS") # Force checking of extra keys in lieu of just Find/Replace
+            else:
+                find_check = ("Find","Replace","Base")
+            for y in t_patch:
+                if all((x.get(z,"") == y.get(z,"") for z in find_check)):
+                    if not found:
+                        found += 1
+                        print(" --> Located in target.")
+                        check_pairs = [("MinKernel",""),("MaxKernel",""),("MatchKernel",""),("MatchOS",""),("MatchBuild","")]
+                        if not "Replace" in find_check: # We're looking for a CPU core check
+                            check_pairs.append(("Replace",x["Replace"]))
+                        if not any((y in x.get("Comment","").lower() for y in ("fix pat","fix pci bus enumeration"))): # We're comparing a non-PAT/PCI fix
+                            check_pairs.extend([("Disabled",False),("Enabled",True)])
+                        # Check Disabled, MatchOS, and MatchBuild
+                        for z in check_pairs:
+                            if y.get(z[0],z[1]) != x.get(z[0],z[1]):
+                                changed += 1
+                                if not z[0] in x:
+                                    # Remove the value
+                                    print(" ----> {} ({}) not found in source - removing...".format(z[0],y.get(z[0],z[1])))
+                                    y.pop(z[0],None)
+                                else:
+                                    instances = (bytes) if sys.version_info >= (3,0) else (plistlib.Data)
+                                    val1 = binascii.hexlify(plist.extract_data(y.get(z[0],z[1]))).decode("utf-8").upper() if isinstance(y.get(z[0],z[1]),instances) else y.get(z[0],z[1])
+                                    val2 = binascii.hexlify(plist.extract_data(x.get(z[0],z[1]))).decode("utf-8").upper() if isinstance(x.get(z[0],z[1]),instances) else x.get(z[0],z[1])
+                                    print(" ----> {} value incorrect - setting {} --> {}...".format(z[0],val1,val2))
+                                    y[z[0]] = x.get(z[0],z[1])
+                    else:
+                        print(" --> Duplicate found - removing")
+                        changed += 1 
+                        remove.append(y)
+            if len(remove):
+                for y in remove:
+                    t_patch.remove(y)
+            if not found:
+                changed += 1
+                print(" --> Not located in target, adding...")
+                t_patch.append(x)
+        return changed
 
     def _patch_config(self):
         # Verify we have a target plist
@@ -199,17 +266,37 @@ class AMDPatch:
         if plist_type == "Clover": # Clover
             print("Detected Clover plist...")
             target_data = self._ensure(["KernelAndKextPatches","KernelToPatch"],target_data,list)
-            source_data = self._ensure(["KernelToPatch"],source_data,list)
-            if self.remove_existing: target_data["KernelAndKextPatches"]["KernelToPatch"] = []
+            source_data = self._ensure(["KernelAndKextPatches","KernelToPatch"],source_data,list)
+            target_data = self._ensure(["KernelAndKextPatches","KextsToPatch"],target_data,list)
+            source_data = self._ensure(["KernelAndKextPatches","KextsToPatch"],source_data,list)
+            if self.remove_existing:
+                target_data["KernelAndKextPatches"]["KernelToPatch"] = []
+                temp_kextstopatch = []
+                keys = ("Find","Replace","Name")
+                for k in target_data["KernelAndKextPatches"]["KextsToPatch"]:
+                    # See if it matches any additional patches
+                    if any(p for p in self.additional_patches if all(k.get(key)==p.get(key,"") for key in keys)):
+                        continue # Skip matches
+                    temp_kextstopatch.append(k)
+                # Replace the original with the modified list
+                target_data["KernelAndKextPatches"]["KextsToPatch"] = temp_kextstopatch
             t_patch = target_data["KernelAndKextPatches"]["KernelToPatch"]
-            s_patch = source_data["KernelToPatch"]
+            s_patch = source_data["KernelAndKextPatches"]["KernelToPatch"]
             plist_type = "Clover"
         else: # Assume OpenCore
             print("Detected OpenCore plist...")
             target_data = self._ensure(["Kernel","Patch"],target_data,list)
             target_data = self._ensure(["Kernel","Quirks"],target_data,dict)
             source_data = self._ensure(["Kernel","Patch"],source_data,list)
-            if self.remove_existing: target_data["Kernel"]["Patch"] = [x for x in target_data["Kernel"]["Patch"] if x.get("Identifier","") != "kernel"]
+            if self.remove_existing:
+                temp_kernel_patch = []
+                keys = ("Find","Replace","Identifier")
+                for k in target_data["Kernel"]["Patch"]:
+                    if k.get("Identifier")=="kernel" or any(p for p in self.additional_patches if all(k.get(key)==p.get(key,"") for key in keys)):
+                        continue # Skip matches
+                        temp_kernel_patch.append(k)
+                # Replace the original with the modified list
+                target_data["Kernel"]["Patch"] = temp_kernel_patch
             t_patch = target_data["Kernel"]["Patch"]
             s_patch = source_data["Kernel"]["Patch"]
             plist_type = "OC"
@@ -220,55 +307,14 @@ class AMDPatch:
                 else:
                     print("ProvideCurrentCpuInfo disabled - enabling...")
                 target_data["Kernel"]["Quirks"]["ProvideCurrentCpuInfo"] = True
-        print("Iterating {:,} patch{}...".format(len(s_patch),"" if len(s_patch)==1 else "es"))
         # At this point, we should be good to patch
-        for i,x in enumerate(s_patch, start=1):
-            found = 0
-            remove = []
-            print(" - {}. {}".format(str(i).rjust(3),x.get("Comment","Uncommented")))
-            if "force cpuid_cores_per_package" in x.get("Comment","").lower() and "Replace" in x:
-                print(" --> Needs core count patch - setting to {} core{}...".format(cpu_cores,"" if cpu_cores==1 else "s"))
-                repl = binascii.hexlify(plist.extract_data(x["Replace"])).decode("utf-8")
-                after = repl[:2]+hex(cpu_cores)[2:].rjust(2,"0")+repl[4:]
-                x["Replace"] = plist.wrap_data(binascii.unhexlify(after.encode("utf-8")))
-                find_check = ("Find","Base","MinKernel","MaxKernel","MatchOS") # Force checking of extra keys in lieu of just Find/Replace
-            else:
-                find_check = ("Find","Replace","Base")
-            for y in t_patch:
-                if all((x.get(z,"") == y.get(z,"") for z in find_check)):
-                    if not found:
-                        found += 1
-                        print(" --> Located in target.")
-                        check_pairs = [("MinKernel",""),("MaxKernel",""),("MatchKernel",""),("Disabled",False),("MatchOS",""),("MatchBuild","")]
-                        if not "Replace" in find_check: # We're looking for a CPU core check
-                            check_pairs.append(("Replace",x["Replace"]))
-                        if not "fix pat" in x.get("Comment","").lower(): # We're comparing a non-PAT fix
-                            check_pairs.append(("Enabled",True))
-                        # Check Disabled, MatchOS, and MatchBuild
-                        for z in check_pairs:
-                            if y.get(z[0],z[1]) != x.get(z[0],z[1]):
-                                changed += 1
-                                if not z[0] in x:
-                                    # Remove the value
-                                    print(" ----> {} ({}) not found in source - removing...".format(z[0],y.get(z[0],z[1])))
-                                    y.pop(z[0],None)
-                                else:
-                                    instances = (bytes) if sys.version_info >= (3,0) else (plistlib.Data)
-                                    val1 = binascii.hexlify(plist.extract_data(y.get(z[0],z[1]))).decode("utf-8").upper() if isinstance(y.get(z[0],z[1]),instances) else y.get(z[0],z[1])
-                                    val2 = binascii.hexlify(plist.extract_data(x.get(z[0],z[1]))).decode("utf-8").upper() if isinstance(x.get(z[0],z[1]),instances) else x.get(z[0],z[1])
-                                    print(" ----> {} value incorrect - setting {} --> {}...".format(z[0],val1,val2))
-                                    y[z[0]] = x.get(z[0],z[1])
-                    else:
-                        print(" --> Duplicate found - removing")
-                        changed += 1 
-                        remove.append(y)
-            if len(remove):
-                for y in remove:
-                    t_patch.remove(y)
-            if not found:
-                changed += 1
-                print(" --> Not located in target, adding...")
-                t_patch.append(x)
+        changed += self._walk_patches(s_patch,t_patch,cpu_cores)
+        if plist_type == "Clover" and source_data["KernelAndKextPatches"].get("KextsToPatch"):
+            # Check additional KextsToPatch
+            print("Got KextsToPatch entries...")
+            t_patch = target_data["KernelAndKextPatches"]["KextsToPatch"]
+            s_patch = source_data["KernelAndKextPatches"]["KextsToPatch"]
+            changed += self._walk_patches(s_patch,t_patch,cpu_cores)
         # Now we write our target plist data
         if changed == 0:
             print("No changes made.")
