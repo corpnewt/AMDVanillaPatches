@@ -176,7 +176,8 @@ class AMDPatch:
                         check_pairs = [("MinKernel",""),("MaxKernel",""),("MatchKernel",""),("MatchOS",""),("MatchBuild","")]
                         if not "Replace" in find_check: # We're looking for a CPU core check
                             check_pairs.append(("Replace",x["Replace"]))
-                        if not any((y in x.get("Comment","").lower() for y in ("fix pat","fix pci bus enumeration"))): # We're comparing a non-PAT/PCI fix
+                        if not any((y in x.get("Comment","").lower() for y in ("fix pat","fix pci bus enumeration","remove non-monotonic time panic"))):
+                            # We're comparing a non-PAT/PCI/non-monotonic time fix - allow those to be enabled/disabled per the user
                             check_pairs.extend([("Disabled",False),("Enabled",True)])
                         # Check Disabled, MatchOS, and MatchBuild
                         for z in check_pairs:
