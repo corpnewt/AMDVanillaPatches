@@ -161,6 +161,10 @@ class AMDPatch:
         changed = 0
         print("Iterating {:,} patch{}...".format(len(s_patch),"" if len(s_patch)==1 else "es"))
         for i,x in enumerate(s_patch, start=1):
+            if not isinstance(x,dict):
+                # Patch isn't a dict
+                print(" - {}. !! Not a dictionary, skipping !!".format(i))
+                continue
             found = 0
             remove = []
             print(" - {}. {}".format(str(i).rjust(3),x.get("Comment","Uncommented")))
@@ -173,6 +177,9 @@ class AMDPatch:
             else:
                 find_check = ("Find","Replace","Base")
             for y in t_patch:
+                if not isinstance(y,dict):
+                    # Skip non-dictionaries in the target
+                    continue
                 if all((x.get(z,"") == y.get(z,"") for z in find_check)):
                     if not found:
                         found += 1
@@ -239,6 +246,13 @@ class AMDPatch:
             print("")
             self.u.grab("Press [enter] to return...")
             return
+        if not isinstance(target_data,dict):
+            # Wrong type of top-level object
+            print("")
+            print("Target plist's top-level object is not a dictionary.  Aborting.")
+            print("")
+            self.u.grab("Press [enter] to return...")
+            return
         # Check our plist type - prioritize OC, look for "Kernel" first, then look for "KernelAndKextPatches", then fall back to OC
         plist_type = "OC" if "Kernel" in target_data else "Clover" if "KernelAndKextPatches" in target_data else "OC"
         # Verify we have a source plist
@@ -261,6 +275,13 @@ class AMDPatch:
             print("Unable to load source plist.  Aborting.")
             print("")
             print(str(e))
+            print("")
+            self.u.grab("Press [enter] to return...")
+            return
+        if not isinstance(source_data,dict):
+            # Wrong type of top-level object
+            print("")
+            print("Source plist's top-level object is not a dictionary.  Aborting.")
             print("")
             self.u.grab("Press [enter] to return...")
             return
@@ -297,9 +318,10 @@ class AMDPatch:
                 temp_kernel_patch = []
                 keys = ("Find","Replace","Identifier")
                 for k in target_data["Kernel"]["Patch"]:
-                    if k.get("Identifier")=="kernel" or any(p for p in self.additional_patches if all(k.get(key)==p.get(key,"") for key in keys)):
+                    if isinstance(k,dict) and (k.get("Identifier")=="kernel" or \
+                    any(p for p in self.additional_patches if all(k.get(key)==p.get(key,"") for key in keys))):
                         continue # Skip matches
-                        temp_kernel_patch.append(k)
+                    temp_kernel_patch.append(k)
                 # Replace the original with the modified list
                 target_data["Kernel"]["Patch"] = temp_kernel_patch
             t_patch = target_data["Kernel"]["Patch"]
