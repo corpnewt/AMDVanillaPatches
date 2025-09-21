@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import os, sys, tempfile, shutil, binascii, plistlib, subprocess, platform
+import os, sys, tempfile, shutil, binascii, plistlib, subprocess, platform, json
 from Scripts import utils, downloader, plist
 
 class AMDPatch:
@@ -10,6 +10,8 @@ class AMDPatch:
             "OC":"https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/master/patches.plist",
             "Clover":"https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/clover/patches.plist"
         }
+        self.branches_url = "https://github.com/AMD-OSX/AMD_Vanilla/branches/all"
+        self.custom_branch_url = "https://raw.githubusercontent.com/AMD-OSX/AMD_Vanilla/{}/patches.plist"
         self.scripts = "Scripts"
         self.plist = None
         self.plist_data = None
@@ -31,6 +33,71 @@ class AMDPatch:
         ]
         self.local_cores = self._detect_cores()
 
+    def _get_specific_branch(self, pause=True):
+        self.u.head("Getting Branch List")
+        print("")
+        branch_list = []
+        data = None
+        try:
+            branch_html = self.d.get_string(self.branches_url)
+            line_check = '<script type="application/json" data-target="react-app.embeddedData">'
+            for line in branch_html.split("\n"):
+                if line_check in line:
+                    # Got the JSON line - extract and parse it
+                    data = json.loads(line.split(line_check)[1].split("</script>")[0])
+                    break
+            if data is None:
+                raise Exception("Could not locate branches in page source")
+        except Exception as e:
+            print("We ran into some problems :(\n\n{}".format(e))
+        if data:
+            branch_list = [x["name"] for x in data.get("payload",{}).get("branches",[]) if x.get("name")]
+            branch = None
+            while True:
+                # Display the available branches that are *not* default, and
+                # ask the user to pick which to use
+                self.u.head("Available Non-Default Branches")
+                print("")
+                if not branch_list:
+                    print(" - None found")
+                else:
+                    for i,b in enumerate(branch_list,start=1):
+                        print("{}. {}".format(i,b.capitalize()))
+                print("")
+                print("M. Return to Menu")
+                print("Q. Quit")
+                print("")
+                menu = self.u.grab("Please select the branch to use:  ")
+                if not len(menu):
+                    continue
+                if menu.lower() == "m":
+                    return
+                elif menu.lower() == "q":
+                    self.u.custom_quit()
+                # Assume a number - see if we got a valid one
+                try:
+                    branch = branch_list[int(menu)-1]
+                except:
+                    continue
+                # Got a valid branch - let's break out.
+                break
+            if branch is None:
+                return # Something failed
+            temp = tempfile.mkdtemp()
+            cwd = os.getcwd()
+            # Let's download the plist, and auto-detect the type
+            self.u.head("Downloading From {} Branch".format(branch.capitalize()))
+            print("")
+            try:
+                self._download(temp,self.custom_branch_url.format(branch),prefix=None)
+            except Exception as e:
+                print("We ran into some problems :(\n\n{}".format(e))
+            print("Cleaning up...")
+            os.chdir(cwd)
+            shutil.rmtree(temp)
+        if pause: self.u.grab("Done.",timeout=5)
+        return
+
     def _ensure(self, path_list, dict_data, obj_type = list):
         item = dict_data
         for index,path in enumerate(path_list,1):
@@ -45,17 +112,32 @@ class AMDPatch:
     def _download(self, temp, url, prefix = "OC"):
         ztemp = tempfile.mkdtemp(dir=temp)
         zfile = os.path.basename(url)
-        print("Downloading {}-{}...".format(prefix,os.path.basename(url)))
+        print("Downloading {}...".format(os.path.basename(url)))
         self.d.stream_to_file(url, os.path.join(ztemp,zfile), False)
         script_dir = os.path.join(os.path.dirname(os.path.realpath(__file__)),self.scripts)
-        for x in os.listdir(os.path.join(temp,ztemp)):
-            if "patches.plist" in x.lower():
-                # Found one
-                print(" - Found {}".format(x))
-                print("   - Copying to {} directory...".format(self.scripts))
-                if not os.path.exists(script_dir):
-                    os.mkdir(script_dir)
-                shutil.copy(os.path.join(ztemp,x), os.path.join(script_dir,"{}-{}".format(prefix,x)))
+        file_path = os.path.join(temp,ztemp,zfile)
+        if os.path.isfile(file_path):
+            # Found one
+            print(" - Located {}".format(zfile))
+            if prefix is None:
+                # Auto-detecting
+                print("   - Loading to determine type...")
+                try:
+                    with open(file_path,"rb") as f:
+                        plist_data = plist.load(f)
+                except Exception as e:
+                    print("   - Failed to load!  Skipping...")
+                    return
+                plist_type = "OC" if "Kernel" in plist_data else "Clover" if "KernelAndKextPatches" in plist_data else "OC"
+                print("   --> Plist type: {}".format(plist_type))
+            print("   - Copying to {} directory...".format(self.scripts))
+            if not os.path.exists(script_dir):
+                os.mkdir(script_dir)
+            shutil.copy(
+                file_path,
+                os.path.join(script_dir,"{}-patches.plist".format(prefix or plist_type))
+            )
+            print("   --> Saved as {}-patches.plist".format(prefix or plist_type))
 
     def _get_config(self,pause=True):
         self.u.head("Getting Patches.plist")
@@ -375,6 +457,7 @@ class AMDPatch:
         print("2. Select target config.plist")
         print("3. Patch target config.plist")
         print("4. Remove ALL existing kernel patches in target (Currently {})".format("Enabled" if self.remove_existing else "Disabled"))
+        print("5. Get vanilla patches from specific branch")
         print("")
         print("Q. Quit")
         print("")
@@ -391,14 +474,17 @@ class AMDPatch:
             self._patch_config()
         elif menu == "4":
             self.remove_existing = not self.remove_existing
+        elif menu == "5":
+            self._get_specific_branch()
 
-a = AMDPatch()
-while True:
-    try:
-        a.main()
-    except Exception as e:
-        print(e)
-        if sys.version_info >= (3, 0):
-            input("Press [enter] to return...")
-        else:
-            raw_input("Press [enter] to return...")
+if __name__ == "__main__":
+    a = AMDPatch()
+    while True:
+        try:
+            a.main()
+        except Exception as e:
+            print(e)
+            if 2/3==0:
+                raw_input("Press [enter] to return...")
+            else:
+                input("Press [enter] to return...")
